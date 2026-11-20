@@ -1,0 +1,6 @@
+{$DOMAIN} {
+    encode gzip
+    header Referrer-Policy "same-origin"
+    header X-Frame-Options "DENY"
+    reverse_proxy editor:3001
+}
