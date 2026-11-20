@@ -19,7 +19,15 @@ export function checkProject(p: Project): Issue[] {
   const boards = new Map(p.boards.map((b) => [b.id, b]));
   // IDs are globally unique inside a project, including ports and dialogue lines.
   const seen = new Set<string>();
-  for (const objectId of [...p.folders, ...p.boards, ...p.nodes, ...p.edges, ...p.characters, ...p.variables]
+  for (const objectId of [
+    ...p.folders,
+    ...p.boards,
+    ...p.nodes,
+    ...p.edges,
+    ...p.characters,
+    ...p.variables,
+    ...(p.relationships ?? []),
+  ]
     .map((o) => o.id)
     .concat(
       p.nodes.flatMap((n) => [
@@ -32,6 +40,13 @@ export function checkProject(p: Project): Issue[] {
   }
   if (!p.entryNodeId || !nodes.has(p.entryNodeId) || nodes.get(p.entryNodeId)?.type !== 'start')
     push('entry', 'error', '项目缺少有效的正式起点。');
+  const characterIds = new Set(p.characters.map((character) => character.id));
+  for (const relation of p.relationships ?? []) {
+    if (!characterIds.has(relation.sourceCharacterId) || !characterIds.has(relation.targetCharacterId))
+      push('relationship-reference', 'error', `关系“${relation.title || relation.kind}”引用了不存在的角色。`);
+    if (relation.sourceCharacterId === relation.targetCharacterId)
+      push('relationship-self', 'error', '角色关系必须连接两个不同角色。');
+  }
   for (const b of p.boards) {
     if (!folders.has(b.folderId)) push('folder', 'error', `场景“${b.name}”的章节不存在。`);
     const starts = p.nodes.filter((n) => n.boardId === b.id && n.type === 'start');

@@ -2,20 +2,25 @@ import { z } from 'zod';
 import { checkProject } from './check';
 import { id, projectSchema, type Project } from './model';
 
-export const backupSchema = z
+const backupEnvelope = z
   .object({
     format: z.literal('story-editor-backup'),
-    schemaVersion: z.literal(1),
+    schemaVersion: z.literal(2),
     exportedAt: z.string().datetime(),
     project: projectSchema,
   })
   .strict();
+export const backupSchema = z.preprocess((value) => {
+  if (value && typeof value === 'object' && 'schemaVersion' in value && value.schemaVersion === 1)
+    return { ...value, schemaVersion: 2 };
+  return value;
+}, backupEnvelope);
 export function backup(p: Project) {
   return {
     format: 'story-editor-backup',
-    schemaVersion: 1,
+    schemaVersion: 2,
     exportedAt: new Date().toISOString(),
-    project: p,
+    project: projectSchema.parse(p),
   };
 }
 export function importBackup(content: string): Project {

@@ -85,6 +85,75 @@ describe('durable collaboration API and WebSocket', () => {
       leases: lease.data,
     };
   }
+  test('legacy projects migrate and relationship cards persist, synchronize and enforce viewer permissions', async () => {
+    const owner = await register('relationship-owner'),
+      viewer = await register('relationship-viewer');
+    const initial = sampleProject();
+    initial.characters.push({ id: randomUUID(), name: '旅人', description: '', color: 'teal' });
+    const { relationships, ...fields } = initial;
+    const legacy = { ...fields, schemaVersion: 1 };
+    const created = await request('/projects', owner, legacy);
+    expect(created.status).toBe(200);
+    const state = created.data as Envelope,
+      project = state.project.id;
+    // Exercise loading an existing v1 row, not just creating a project through migration.
+    service.db
+      .prepare('UPDATE projects SET data=? WHERE id=?')
+      .run(JSON.stringify({ ...legacy, id: project }), project);
+    const migrated = await request(`/projects/${project}`, owner);
+    expect(migrated.data.project.schemaVersion).toBe(2);
+    expect(migrated.data.project.relationships).toEqual([]);
+    await invite(owner, project, viewer, 'viewer');
+    await socket(owner, project);
+    const peer = await socket(viewer, project);
+    const next = structuredClone(migrated.data.project);
+    next.relationships.push({
+      id: randomUUID(),
+      title: '守卫与旅人',
+      sourceCharacterId: next.characters[0].id,
+      targetCharacterId: next.characters[1].id,
+      kind: '盟友',
+      direction: 'mutual',
+      affinity: 40,
+      description: '互相信任',
+      development: '共同寻找灯笼',
+      status: 'draft',
+    });
+    const changes = diff(migrated.data.project, next, {}),
+      keys = touched(changes);
+    const tokens = await request(`/projects/${project}/leases`, owner, { keys });
+    const command = {
+      operationId: randomUUID(),
+      epoch: state.epoch,
+      label: '新建角色关系卡片',
+      changes,
+      leases: tokens.data,
+    };
+    expect((await request(`/projects/${project}/commands`, viewer, command)).status).toBe(403);
+    const committed = await request(`/projects/${project}/commands`, owner, command);
+    expect(committed.status, JSON.stringify(committed.data)).toBe(200);
+    await new Promise<void>((done) => setTimeout(done, 30));
+    expect(
+      peer.received.some((message) => message.state?.project.relationships[0]?.title === '守卫与旅人'),
+    ).toBe(true);
+    const exported = await request(`/projects/${project}/export?revision=1`, owner);
+    expect(exported.data.schemaVersion).toBe(2);
+    expect(exported.data.project.relationships).toEqual(next.relationships);
+    const invalid = structuredClone(committed.data.project);
+    invalid.characters.pop();
+    const deletion = diff(committed.data.project, invalid, committed.data.versions);
+    const deletionTokens = await request(`/projects/${project}/leases`, owner, { keys: touched(deletion) });
+    expect(
+      (
+        await request(`/projects/${project}/commands`, owner, {
+          ...command,
+          operationId: randomUUID(),
+          changes: deletion,
+          leases: deletionTokens.data,
+        })
+      ).status,
+    ).toBe(409);
+  });
   test('different objects merge, same object is exclusive, retries are idempotent and conflicts reject', async () => {
     const owner = await register('owner'),
       editor = await register('editor');

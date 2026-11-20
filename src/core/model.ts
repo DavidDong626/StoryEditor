@@ -50,9 +50,23 @@ export const nodeSchema = z.discriminatedUnion('type', [
   z.object({ ...base, type: z.literal('jump'), targetNodeId: uuid.nullable() }).strict(),
   z.object({ ...base, type: z.literal('end'), text, endingKey: z.string().max(100) }).strict(),
 ]);
-export const projectSchema = z
+export const relationshipSchema = z
   .object({
-    schemaVersion: z.literal(1),
+    id: uuid,
+    title: z.string().max(200),
+    sourceCharacterId: uuid,
+    targetCharacterId: uuid,
+    kind: z.string().max(60),
+    direction: z.enum(['mutual', 'directed']),
+    affinity: z.number().int().min(-100).max(100),
+    description: z.string().max(10000),
+    development: z.string().max(10000),
+    status: z.enum(['draft', 'review', 'approved']),
+  })
+  .strict();
+const projectV2Schema = z
+  .object({
+    schemaVersion: z.literal(2),
     id: uuid,
     name: z.string().min(1).max(100),
     revision: z.number().int().nonnegative(),
@@ -90,6 +104,7 @@ export const projectSchema = z
           .strict(),
       )
       .max(5_000),
+    relationships: z.array(relationshipSchema).max(10000),
     variables: z
       .array(
         z
@@ -105,7 +120,20 @@ export const projectSchema = z
       .max(5_000),
   })
   .strict();
+// Preserve v1 projects and snapshots; migrations never regenerate object IDs.
+export const projectSchema = z.preprocess((value) => {
+  if (
+    value &&
+    typeof value === 'object' &&
+    'schemaVersion' in value &&
+    value.schemaVersion === 1 &&
+    !('relationships' in value)
+  )
+    return { ...value, schemaVersion: 2, relationships: [] };
+  return value;
+}, projectV2Schema);
 export type Project = z.infer<typeof projectSchema>;
+export type Relationship = z.infer<typeof relationshipSchema>;
 export type StoryNode = z.infer<typeof nodeSchema>;
 export type NodeType = StoryNode['type'];
 export type Condition = z.infer<typeof conditionSchema>;
@@ -177,7 +205,8 @@ export function newProject(name = '未命名故事'): Project {
     boardId = id();
   const start = createNode('start', boardId, { x: 80, y: 180 });
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
+    relationships: [],
     id: id(),
     name,
     revision: 0,

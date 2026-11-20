@@ -19,6 +19,7 @@ import {
   type Command,
 } from '../src/core/collaboration';
 import { backup, runtimeExport } from '../src/core/transfer';
+import { projectSchema } from '../src/core/model';
 
 const scrypt = promisify(rawScrypt);
 const hash = (s: string) => createHash('sha256').update(s).digest('hex');
@@ -94,7 +95,7 @@ export function createCollaborationServer(
       { data: string; epoch: number; versions: string } | undefined;
     if (!row) fail('项目不存在', 404);
     return {
-      project: JSON.parse(row!.data),
+      project: projectSchema.parse(JSON.parse(row!.data)),
       epoch: row!.epoch,
       versions: JSON.parse(row!.versions),
       role: r,

@@ -2,7 +2,15 @@ import { z } from 'zod';
 import { projectSchema, type Project } from './model';
 import { checkProject } from './check';
 
-export const collections = ['folders', 'boards', 'nodes', 'edges', 'characters', 'variables'] as const;
+export const collections = [
+  'folders',
+  'boards',
+  'nodes',
+  'edges',
+  'characters',
+  'variables',
+  'relationships',
+] as const;
 export type Collection = (typeof collections)[number];
 export type Role = 'owner' | 'editor' | 'viewer';
 export interface RemoteState {
@@ -38,8 +46,8 @@ const meta = (p: Project) => ({ name: p.name, entryNodeId: p.entryNodeId });
 export function diff(before: Project, after: Project, versions: Record<string, number>): Delta[] {
   const result: Delta[] = [];
   for (const collection of collections) {
-    const old = new Map(before[collection].map((v) => [v.id, v]));
-    const next = new Map(after[collection].map((v) => [v.id, v]));
+    const old = new Map((before[collection] ?? []).map((v) => [v.id, v]));
+    const next = new Map((after[collection] ?? []).map((v) => [v.id, v]));
     for (const id of new Set([...old.keys(), ...next.keys()])) {
       const a = old.get(id) ?? null,
         b = next.get(id) ?? null;
@@ -58,7 +66,7 @@ export function diff(before: Project, after: Project, versions: Record<string, n
   return result;
 }
 export function applyChanges(current: Project, versions: Record<string, number>, changes: Delta[]): Project {
-  const next = structuredClone(current);
+  const next = projectSchema.parse(current);
   const seen = new Set<string>();
   for (const d of changes) {
     const key = keyOf(d);
@@ -117,6 +125,13 @@ export function validateDraft(value: unknown): Project {
 // Structural writes also occupy both endpoints, so removing a node/port cannot race a new edge.
 export function touched(changes: Delta[]): string[] {
   const keys = new Set(changes.map(keyOf));
+  for (const change of changes)
+    if (change.collection === 'relationships')
+      for (const value of [change.before, change.after]) {
+        const relation = value as { sourceCharacterId?: string; targetCharacterId?: string } | null;
+        if (relation?.sourceCharacterId) keys.add(`characters:${relation.sourceCharacterId}`);
+        if (relation?.targetCharacterId) keys.add(`characters:${relation.targetCharacterId}`);
+      }
   for (const d of changes)
     if (d.collection === 'edges')
       for (const value of [d.before, d.after]) {

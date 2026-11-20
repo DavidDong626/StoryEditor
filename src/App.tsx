@@ -70,10 +70,19 @@ import { RemoteClient, type RemoteState } from './core/client';
 import type { Envelope } from './core/collaboration';
 import { importAvatar } from './core/avatar';
 import CharacterAvatar from './components/CharacterAvatar';
+import Relationships from './components/Relationships';
 
 const nodeTypes = { storyCard: StoryCard };
 type Modal =
-  'projects' | 'characters' | 'variables' | 'export' | 'history' | 'about' | 'collaboration' | null;
+  | 'projects'
+  | 'characters'
+  | 'relationships'
+  | 'variables'
+  | 'export'
+  | 'history'
+  | 'about'
+  | 'collaboration'
+  | null;
 type HistoryEntry = { id: string; label: string; time: string; revision: number };
 function ModalShell({
   title,
@@ -133,6 +142,7 @@ export default function App() {
   const [charactersExpanded, setCharactersExpanded] = useState(true);
   const [variablesExpanded, setVariablesExpanded] = useState(false);
   const [resourceTarget, setResourceTarget] = useState<string | null>(null);
+  const [relationshipCharacterId, setRelationshipCharacterId] = useState<string | null>(null);
   const [search, setSearch] = useState(''),
     [typeFilter, setTypeFilter] = useState('all');
   const [nodeMenu, setNodeMenu] = useState(false),
@@ -996,6 +1006,17 @@ export default function App() {
                 </div>
               )}
               <button
+                className="resource-item"
+                onClick={() => {
+                  setRelationshipCharacterId(null);
+                  setModal('relationships');
+                }}
+              >
+                <GitBranch size={16} />
+                <span>角色关系</span>
+                <span>{project.relationships?.length ?? 0}</span>
+              </button>
+              <button
                 className="resource-item resource-folder"
                 aria-expanded={variablesExpanded}
                 aria-controls="sidebar-variables"
@@ -1604,6 +1625,22 @@ export default function App() {
                       }))
                     }
                   />
+                  <button
+                    className="text-button small"
+                    onClick={() => {
+                      setRelationshipCharacterId(c.id);
+                      setModal('relationships');
+                    }}
+                  >
+                    <GitBranch size={13} />
+                    查看相关关系（
+                    {
+                      (project.relationships ?? []).filter(
+                        (r) => r.sourceCharacterId === c.id || r.targetCharacterId === c.id,
+                      ).length
+                    }
+                    ）
+                  </button>
                 </div>
                 <button
                   className="icon-button danger"
@@ -1613,8 +1650,13 @@ export default function App() {
                     const references = project.nodes.filter(
                       (n) => n.type === 'story' && n.lines.some((l) => l.speakerId === c.id),
                     );
-                    if (references.length) {
-                      setToast(`有 ${references.length} 个节点引用此角色。请先将相关对白改为旁白。`);
+                    const relationshipCount = (project.relationships ?? []).filter(
+                      (r) => r.sourceCharacterId === c.id || r.targetCharacterId === c.id,
+                    ).length;
+                    if (references.length || relationshipCount) {
+                      setToast(
+                        `此角色被 ${references.length} 个对白节点、${relationshipCount} 张关系卡片引用。请先调整对白或移除关系。`,
+                      );
                       return;
                     }
                     if (await askConfirmation('删除这个角色？'))
@@ -1646,6 +1688,20 @@ export default function App() {
             <Plus size={15} />
             新建角色
           </button>
+        </ModalShell>
+      )}
+      {modal === 'relationships' && (
+        <ModalShell title="角色关系 · 设计卡片" close={() => setModal(null)} wide>
+          <Relationships
+            project={project}
+            readOnly={!writable}
+            change={change}
+            initialCharacterId={relationshipCharacterId}
+            manageCharacters={() => {
+              setResourceTarget(null);
+              setModal('characters');
+            }}
+          />
         </ModalShell>
       )}
       {modal === 'variables' && (

@@ -77,7 +77,8 @@ export function sampleProject(): Project {
     targetNodeId: b.id,
   });
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
+    relationships: [],
     id: id(),
     name: '雾港来信',
     revision: 0,
